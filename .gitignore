@@ -1,0 +1,18 @@
+# Root
+.env
+.env.*
+*.log
+.DS_Store
+.vscode/
+.venv
+venv/
+
+# Python server
+server/.venv/
+server/__pycache__/
+server/*.pyc
+server/app.db
+
+# Node client
+client/node_modules/
+client/dist/
