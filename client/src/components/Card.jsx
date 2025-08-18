@@ -1,4 +1,4 @@
-export default function Card({ code, hidden=false, flipped=false, onToggle, size="large" }){
+export default function Card({ code, hidden=false, flipped=false, onToggle, size="large", className="" }){
   // Size configurations
   const sizeConfig = {
     small: { width: "w-12", height: "h-16", textSize: "text-sm", rankSize: "text-lg", suitSize: "text-xl" },
@@ -10,11 +10,7 @@ export default function Card({ code, hidden=false, flipped=false, onToggle, size
   const config = sizeConfig[size]
   
   const back = (
-    <div className={`${config.width} ${config.height} rounded-xl bg-gradient-to-br from-red-800 to-red-600 flex items-center justify-center ${config.textSize} text-white font-bold shadow-lg hover-lift cursor-pointer border-2 border-yellow-400`}>
-      <div className="text-center">
-        <div className="text-lg">🎰</div>
-        <div className={config.textSize}>Hidden</div>
-      </div>
+    <div className={`${config.width} ${config.height} rounded-xl bg-cover bg-center border-2 border-yellow-400 shadow-lg hover-lift cursor-pointer`} style={{backgroundImage: 'url(/images/playing-card-back-side-isolated-on-white-clipping-path-included-2C8BN92.jpg)', backgroundSize: '140%', backgroundPosition: 'center'}}>
     </div>
   )
   if (!code) return back
@@ -34,7 +30,7 @@ export default function Card({ code, hidden=false, flipped=false, onToggle, size
   )
   const show = hidden ? back : (flipped ? back : face)
   return (
-    <div onClick={onToggle} className="cursor-pointer select-none floating-element">
+    <div onClick={onToggle} className={`cursor-pointer select-none floating-element ${className}`}>
       {show}
     </div>
   )

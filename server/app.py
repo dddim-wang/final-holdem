@@ -98,7 +98,16 @@ class Game:
 
     def everyone_acted(self) -> bool:
         for sid in self.active_sids():
-            if not self.players[sid].action_submitted and not self.players[sid].name.startswith("Host-"):
+            p = self.players[sid]
+            if p.name.startswith("Host-"):
+                continue
+            # Check if player needs to call the current bet
+            if p.in_hand and p.pot < self.current_bet:
+                # Player hasn't called the current bet yet
+                if not p.action_submitted:
+                    return False
+            elif p.in_hand and not p.action_submitted:
+                # Player is in hand but hasn't acted yet
                 return False
         return True
 
@@ -126,15 +135,19 @@ def card_to_tuple(c: str) -> Tuple[int, str]:
     return (RANK_TO_VAL[c[0]], c[1])
 
 def is_straight(vals: List[int]) -> Optional[int]:
-    # vals sorted descending
+    # vals should already be sorted descending
     uniq = sorted(set(vals), reverse=True)
-    # Wheel straight A-2-3-4-5
-    if {14,5,4,3,2}.issubset(set(vals)):
-        return 5
+    
+    # Check for wheel straight (A-2-3-4-5) - lowest straight
+    if {14, 2, 3, 4, 5}.issubset(set(vals)):
+        return 5  # Return 5 as the high card for wheel straight
+    
+    # Check for regular straights (5 cards in sequence)
     for i in range(len(uniq) - 4):
         window = uniq[i:i+5]
-        if window[0] - window[4] == 4:
-            return window[0]
+        if window[0] - window[4] == 4:  # Consecutive values
+            return window[0]  # Return the high card of the straight
+    
     return None
 
 def classify_5(cards5: List[str]):
@@ -167,16 +180,17 @@ def classify_5(cards5: List[str]):
         return (HAND_ORDER["straight"], top_straight)
     if counts[0][1] == 3:
         trips = counts[0][0]
-        kickers = [v for v in vals if v != trips][:2]
+        kickers = sorted([v for v in vals if v != trips], reverse=True)[:2]
         return (HAND_ORDER["three"], trips, kickers)
     if counts[0][1] == 2 and counts[1][1] == 2:
+        # two pair - ensure high pair is first, low pair is second, then kicker
         high_pair = max(counts[0][0], counts[1][0])
         low_pair = min(counts[0][0], counts[1][0])
         kicker = max([v for v in vals if v != high_pair and v != low_pair])
         return (HAND_ORDER["two_pair"], high_pair, low_pair, kicker)
     if counts[0][1] == 2:
         pair = counts[0][0]
-        kickers = [v for v in vals if v != pair][:3]
+        kickers = sorted([v for v in vals if v != pair], reverse=True)[:3]
         return (HAND_ORDER["pair"], pair, kickers)
     return (HAND_ORDER["high"], vals)
 
@@ -206,12 +220,37 @@ def best_hand(hole: List[str], board: List[str]):
     print(f"DEBUG: Final best hand: {best5} with name {hand_name}")
     return best, best5, hand_name
 
+def best_board_hand(board: List[str]):
+    """Evaluate the best possible hand from just the board cards"""
+    if len(board) < 5:
+        return None, None, "Incomplete Board"
+    
+    best = None
+    best5 = None
+    for combo in combinations(board, 5):
+        score = classify_5(list(combo))
+        if (best is None) or (score > best):
+            best = score
+            best5 = list(combo)
+    
+    if best:
+        hand_name = HAND_NAME[best[0]]
+        return best, best5, hand_name
+    return None, None, "No Hand"
+
 # --- REST: auth & comments & rankings ---
 @app.post("/api/register")
 def register():
     data = request.get_json(force=True)
     username = data.get("username", "").strip()
     password = data.get("password", "")
+    
+    # Validate username length
+    if len(username) > 20:
+        return jsonify({"error": "Username must be 20 characters or less"}), 400
+    if len(username) < 3:
+        return jsonify({"error": "Username must be at least 3 characters"}), 400
+    
     if not username or not password:
         return jsonify({"error": "username and password required"}), 400
     pw_hash = generate_password_hash(password)
@@ -230,6 +269,11 @@ def login():
     data = request.get_json(force=True)
     username = data.get("username", "").strip()
     password = data.get("password", "")
+    
+    # Validate username length
+    if len(username) > 20:
+        return jsonify({"error": "Username must be 20 characters or less"}), 400
+    
     with db() as conn:
         row = conn.execute("SELECT * FROM users WHERE username=?", (username,)).fetchone()
     if not row or not check_password_hash(row["password_hash"], password):
@@ -398,8 +442,16 @@ def player_action(data):
         p.raises += 1
         p.action_submitted = True
         g.someone_raised = True
+        old_bet = g.current_bet
         g.current_bet = max(g.current_bet, p.pot)
         print(f"Player {p.name} bet 4. Current bet now: {g.current_bet}, Player pot: {p.pot}")
+        
+        # If the current bet increased, reset action_submitted for all other players so they can act again
+        if g.current_bet > old_bet:
+            for other_p in g.players.values():
+                if other_p.sid != p.sid and other_p.in_hand:
+                    other_p.action_submitted = False
+                    print(f"Reset action for {other_p.name} due to bet increase")
     elif action == "bet8":
         # If someone already raised in this round, can't raise again
         if g.raise_made:
@@ -410,18 +462,47 @@ def player_action(data):
         p.action_submitted = True
         g.someone_raised = True
         g.raise_made = True  # Mark that a raise has been made
+        old_bet = g.current_bet
         g.current_bet = max(g.current_bet, p.pot)
         # Reset action_submitted for all other players so they can act again
         for other_p in g.players.values():
-            if other_p.sid != p.sid:
+            if other_p.sid != p.sid and other_p.in_hand:
                 other_p.action_submitted = False
+                print(f"Reset action for {other_p.name} due to bet8")
         print(f"Player {p.name} bet 8. Current bet now: {g.current_bet}, Player pot: {p.pot}")
     else:
         return emit("error", {"error": "Invalid action"})
 
-    sio.emit("state", serialize_game(g), to=game_id)
+    sio.emit("state", serialize_game(g), to=g.game_id)
+    
+    # Check if only one player remains in hand (early winner)
+    active_players = [p for p in g.players.values() if p.in_hand and not p.name.startswith("Host-")]
+    if len(active_players) == 1 and g.stage != "lobby":
+        # Only one player left - they win automatically
+        winner = active_players[0]
+        
+        # Safety check: ensure winner has valid data
+        if not winner or not winner.name:
+            print("ERROR: Invalid winner data in early winner scenario")
+            return
+            
+        early_winner_data = {
+            "winners": [winner.name],
+            "pot": g.pot,
+            "board": g.board,
+            "hand_name": "Last Player Standing",
+            "early_winner": True,
+            "show": [
+                {"name": winner.name, "cards": winner.cards, "best5": winner.cards, "score": "early_win", "hand_name": "Last Player Standing"}
+            ],
+        }
+        g.stage = "showdown"
+        sio.emit("showdown", early_winner_data, to=g.game_id)
+        sio.emit("state", serialize_game(g), to=g.game_id)
+        return
+    
     if g.everyone_acted():
-        sio.emit("round_settled", {"ok": True}, to=game_id)
+        sio.emit("round_settled", {"ok": True}, to=g.game_id)
 
 @sio.on("host_deal_next")
 def host_deal_next(data):
@@ -458,11 +539,37 @@ def host_deal_next(data):
         g.stage = "river"
     elif g.stage == "river":
         g.stage = "showdown"
+        
+        # Safety check: ensure there are active players for showdown
+        active_players = [p for p in g.players.values() if p.in_hand]
+        if not active_players:
+            print("ERROR: No active players for showdown - this should not happen!")
+            # Fallback: create a default result
+            fallback_result = {
+                "winners": [],
+                "pot": g.pot,
+                "board": g.board,
+                "hand_name": "No Players",
+                "board_win": False,
+                "error": "No active players found for showdown",
+                "show": []
+            }
+            sio.emit("showdown", fallback_result, to=g.game_id)
+            sio.emit("state", serialize_game(g), to=g.game_id)
+            return
+        
         winners = compute_winners(g)
         print(f"DEBUG: Sending showdown results: {winners}")
         print(f"DEBUG: Winners array type: {type(winners['winners'])}")
         print(f"DEBUG: Winners array content: {winners['winners']}")
         print(f"DEBUG: Winners array length: {len(winners['winners'])}")
+        
+        # Final safety check: ensure winners array is not empty
+        if not winners.get('winners') and not winners.get('error'):
+            print("ERROR: No winners found in showdown - this should not happen!")
+            winners['error'] = 'No winners determined'
+            winners['winners'] = [p.name for p in active_players]  # Fallback to all active players
+        
         sio.emit("showdown", winners, to=g.game_id)
         sio.emit("state", serialize_game(g), to=g.game_id)
         return
@@ -491,51 +598,304 @@ def host_reset_round(data):
     g = GAMES[game_id]
     if request.sid != g.host_sid:
         return emit("error", {"error": "Only host can reset"})
-    # Reset to lobby or immediately start another hand
+    # Reset to lobby stage - host must start again
     g.board = []
     g.pot = 0
-    g.stage = "preflop"
+    g.stage = "lobby"  # Changed from "preflop" to "lobby"
     g.someone_raised = False
     g.current_bet = 0
     g.raise_made = False
     g.reset_deck()
     for p in g.players.values():
-        p.in_hand = True
+        p.in_hand = False  # Changed from True to False
         p.action_submitted = False
         p.raises = 0
         p.pot = 0
-        p.cards = []
-    g.deal_to_all()
-    for p in g.players.values():
-        sio.emit("your_cards", {"cards": p.cards}, to=p.sid)
+        p.cards = []  # Clear all cards
+    # Don't deal cards - wait for host to start
     sio.emit("state", serialize_game(g), to=g.game_id)
 
 # --- helpers ---
 def compute_winners(g: Game):
+    """Compute winners following proper Texas Hold'em rules"""
     # Determine active players (those who did not fold before showdown)
     contenders = [p for p in g.players.values() if p.in_hand]
     if not contenders:
-        return {"winners": [], "hand": None}
-    # Compute best hands
+        # This should never happen in a valid game, but if it does, return error
+        print("ERROR: No contenders found - this should not happen!")
+        return {"winners": [], "hand": None, "error": "No active players found"}
+    
+    print(f"DEBUG: Computing winners for {len(contenders)} contenders")
+    
+    # First, check what the best possible hand from the board is
+    board_score, board_best5, board_hand_name = best_board_hand(g.board)
+    print(f"DEBUG: Best board hand: {board_hand_name} with score {board_score}")
+    
+    # Compute best hands for each player
     scored = []
     for p in contenders:
         score, five, name = best_hand(p.cards, g.board)
         scored.append((score, p, name, five))
-        print(f"DEBUG: Player {p.name} has cards {p.cards}, board is {g.board}, best hand: {name}, score: {score}")
+        print(f"DEBUG: Player {p.name} has cards {p.cards}, board is {g.board}")
+        print(f"DEBUG: Best hand: {name}, score: {score}")
+    
+    # Sort by score (highest first) - this handles hand type ranking
     scored.sort(reverse=True, key=lambda t: t[0])
-    top = scored[0][0]
-    winners = [s[1].name for s in scored if s[0] == top]
-    print(f"DEBUG: Top score is {top}, winners are {winners}")
-    print(f"DEBUG: All player names in game: {[p.name for p in g.players.values()]}")
+    top_score = scored[0][0]
+    
+    print(f"DEBUG: Top score is {top_score}")
+    
+    # Check if the board itself contains the best possible hand
+    if board_score and board_score >= top_score:
+        # Board contains the best hand - all active players split the pot
+        if board_score == top_score:
+            # Players tied with the board - this is a board win scenario
+            print(f"DEBUG: Board contains best hand - all players split the pot!")
+            return {
+                "winners": [p.name for p in contenders],  # ✅ ALL active players win and split the pot
+                "pot": g.pot,
+                "board": g.board,
+                "hand_name": board_hand_name,
+                "board_win": True,  # Mark this as a board win
+                "show": [
+                    {"name": s[1].name, "cards": s[1].cards, "best5": s[3], "score": str(s[0]), "hand_name": s[2]} 
+                    for s in scored
+                ],
+            }
+        else:
+            # Board is better than any player hand - all active players split the pot
+            print(f"DEBUG: Board contains best hand - all players split the pot!")
+            return {
+                "winners": [p.name for p in contenders],  # ✅ ALL active players win and split the pot
+                "pot": g.pot,
+                "board": g.board,
+                "hand_name": board_hand_name,
+                "board_win": True,  # Mark this as a board win
+                "show": [
+                    {"name": s[1].name, "cards": s[1].cards, "best5": s[3], "score": str(s[0]), "hand_name": s[2]} 
+                    for s in scored
+                ],
+            }
+    
+    # Find all players with the same top score (potential ties)
+    top_players = [s for s in scored if s[0] == top_score]
+    
+    if len(top_players) == 1:
+        # Single winner - no tie
+        winner = top_players[0]
+        winners = [winner[1].name]
+        print(f"DEBUG: Single winner: {winners[0]} with {winner[2]}")
+    else:
+        # Multiple players with same hand type - need to break tie
+        print(f"DEBUG: {len(top_players)} players tied with same hand type")
+        winners = break_tie(top_players, g.board)
+        print(f"DEBUG: After tie-break, winners: {winners}")
+    
+    # Ensure we always have at least one winner
+    if not winners:
+        print("ERROR: No winners found after tie-breaking - this should not happen!")
+        # Fallback: all top players split the pot
+        winners = [p[1].name for p in top_players]
+        print(f"DEBUG: Fallback to split pot between: {winners}")
+    
     return {
         "winners": winners,
         "pot": g.pot,
         "board": g.board,
-        "hand_name": HAND_NAME[top[0]],  # This is the winning hand name
+        "hand_name": HAND_NAME[top_score[0]],
+        "board_win": False,  # Not a board win
         "show": [
-            {"name": s[1].name, "cards": s[1].cards, "best5": s[3], "score": str(s[0]), "hand_name": s[2]} for s in scored
+            {"name": s[1].name, "cards": s[1].cards, "best5": s[3], "score": str(s[0]), "hand_name": s[2]} 
+            for s in scored
         ],
     }
+
+def break_tie(tied_players, board):
+    """Break ties between players with the same hand type"""
+    if not tied_players:
+        return []
+    
+    # Get the hand type and scores
+    hand_type = tied_players[0][0][0]
+    print(f"DEBUG: Breaking tie for hand type: {HAND_NAME[hand_type]}")
+    
+    if hand_type == HAND_ORDER["straight_flush"]:
+        return break_straight_tie(tied_players)
+    elif hand_type == HAND_ORDER["four"]:
+        return break_four_tie(tied_players)
+    elif hand_type == HAND_ORDER["full_house"]:
+        return break_full_house_tie(tied_players)
+    elif hand_type == HAND_ORDER["flush"]:
+        return break_flush_tie(tied_players)
+    elif hand_type == HAND_ORDER["straight"]:
+        return break_straight_tie(tied_players)
+    elif hand_type == HAND_ORDER["three"]:
+        return break_three_tie(tied_players)
+    elif hand_type == HAND_ORDER["two_pair"]:
+        return break_two_pair_tie(tied_players)
+    elif hand_type == HAND_ORDER["pair"]:
+        return break_pair_tie(tied_players)
+    else:  # high card
+        return break_high_card_tie(tied_players)
+
+def break_straight_tie(tied_players):
+    """Break ties for straights and straight flushes"""
+    # For straights, compare the high card of the straight
+    high_cards = [(p[0][1], p[1].name) for p in tied_players]
+    high_cards.sort(reverse=True)
+    highest = high_cards[0][0]
+    winners = [name for high, name in high_cards if high == highest]
+    return winners
+
+def break_four_tie(tied_players):
+    """Break ties for four of a kind"""
+    # Compare the four of a kind rank, then kicker
+    four_ranks = [(p[0][1], p[0][2][0], p[1].name) for p in tied_players]
+    four_ranks.sort(reverse=True)
+    highest_four = four_ranks[0][0]
+    highest_kicker = four_ranks[0][1]
+    
+    # Find players with highest four of a kind
+    candidates = [(four, kicker, name) for four, kicker, name in four_ranks if four == highest_four]
+    
+    if len(candidates) == 1:
+        return [candidates[0][2]]
+    
+    # Break tie with kicker
+    highest_kicker = max(kicker for four, kicker, name in candidates)
+    winners = [name for four, kicker, name in candidates if kicker == highest_kicker]
+    return winners
+
+def break_full_house_tie(tied_players):
+    """Break ties for full house"""
+    # Compare trips rank, then pair rank
+    trip_ranks = [(p[0][1], p[0][2][0], p[1].name) for p in tied_players]
+    trip_ranks.sort(reverse=True)
+    highest_trips = trip_ranks[0][0]
+    highest_pair = trip_ranks[0][1]
+    
+    # Find players with highest trips
+    candidates = [(trips, pair, name) for trips, pair, name in trip_ranks if trips == highest_trips]
+    
+    if len(candidates) == 1:
+        return [candidates[0][2]]
+    
+    # Break tie with pair rank
+    highest_pair = max(pair for trips, pair, name in candidates)
+    winners = [name for trips, pair, name in candidates if pair == highest_pair]
+    return winners
+
+def break_flush_tie(tied_players):
+    """Break ties for flush"""
+    # Compare all 5 cards in descending order
+    return break_high_card_tie(tied_players)
+
+def break_three_tie(tied_players):
+    """Break ties for three of a kind"""
+    # Compare trips rank, then kickers
+    trip_ranks = [(p[0][1], p[0][2], p[1].name) for p in tied_players]
+    trip_ranks.sort(reverse=True)
+    highest_trips = trip_ranks[0][0]
+    
+    # Find players with highest trips
+    candidates = [(trips, kickers, name) for trips, kickers, name in trip_ranks if trips == highest_trips]
+    
+    if len(candidates) == 1:
+        return [candidates[0][2]]
+    
+    # Break tie with kickers
+    return break_kicker_tie(candidates)
+
+def break_two_pair_tie(tied_players):
+    """Break ties for two pair"""
+    # Compare high pair, then low pair, then kicker
+    pair_ranks = [(p[0][1], p[0][2], p[0][3], p[1].name) for p in tied_players]
+    pair_ranks.sort(reverse=True)
+    highest_high = pair_ranks[0][0]
+    highest_low = pair_ranks[0][1]
+    highest_kicker = pair_ranks[0][2]
+    
+    # Find players with highest high pair
+    candidates = [(high, low, kicker, name) for high, low, kicker, name in pair_ranks if high == highest_high]
+    
+    if len(candidates) == 1:
+        return [candidates[0][3]]
+    
+    # Break tie with low pair
+    highest_low = max(low for high, low, kicker, name in candidates)
+    candidates = [(high, low, kicker, name) for high, low, kicker, name in candidates if low == highest_low]
+    
+    if len(candidates) == 1:
+        return [candidates[0][3]]
+    
+    # Break tie with kicker
+    highest_kicker = max(kicker for high, low, kicker, name in candidates)
+    winners = [name for high, low, kicker, name in candidates if kicker == highest_kicker]
+    return winners
+
+def break_pair_tie(tied_players):
+    """Break ties for one pair"""
+    # Compare pair rank, then kickers
+    pair_ranks = [(p[0][1], p[0][2], p[1].name) for p in tied_players]
+    pair_ranks.sort(reverse=True)
+    highest_pair = pair_ranks[0][0]
+    
+    # Find players with highest pair
+    candidates = [(pair, kickers, name) for pair, kickers, name in pair_ranks if pair == highest_pair]
+    
+    if len(candidates) == 1:
+        return [candidates[0][2]]
+    
+    # Break tie with kickers
+    return break_kicker_tie(candidates)
+
+def break_high_card_tie(tied_players):
+    """Break ties for high card"""
+    # Compare all 5 cards in descending order
+    return break_kicker_tie([(p[0][1], p[1].name) for p in tied_players])
+
+def break_kicker_tie(candidates):
+    """Break ties using kicker cards"""
+    if not candidates:
+        return []
+    
+    # Get the kicker values (could be single value or list)
+    kicker_data = []
+    for candidate in candidates:
+        if len(candidate) == 2:  # (kickers, name)
+            kickers = candidate[0]
+        else:  # (main, kickers, name)
+            kickers = candidate[1]
+        
+        if isinstance(kickers, list):
+            kicker_data.append((kickers, candidate[-1]))  # (kickers, name)
+        else:
+            kicker_data.append(([kickers], candidate[-1]))  # (kickers, name)
+    
+    # Compare kickers one by one
+    max_kickers = max(len(kickers) for kickers, name in kicker_data)
+    
+    for i in range(max_kickers):
+        # Get the i-th kicker for each player (or 0 if they don't have that many)
+        current_kickers = []
+        for kickers, name in kicker_data:
+            if i < len(kickers):
+                current_kickers.append((kickers[i], name))
+            else:
+                current_kickers.append((0, name))
+        
+        # Find highest kicker at this position
+        current_kickers.sort(reverse=True)
+        highest = current_kickers[0][0]
+        
+        # Keep only players with the highest kicker at this position
+        kicker_data = [(kickers, name) for kicker, name in current_kickers if kicker == highest]
+        
+        if len(kicker_data) == 1:
+            return [kicker_data[0][1]]
+    
+    # If we get here, all kickers are equal - it's a true tie
+    return [name for kickers, name in kicker_data]
 
 def serialize_game(g: Game):
     result = {

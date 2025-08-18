@@ -7,6 +7,7 @@ import HostView from './pages/HostView'
 import PlayerView from './pages/PlayerView'
 import Login from './pages/Login'
 import Register from './pages/Register'
+import { TranslationProvider } from './contexts/TranslationContext'
 
 const router = createBrowserRouter([
   { path: '/', element: <App/> },
@@ -18,6 +19,8 @@ const router = createBrowserRouter([
 
 ReactDOM.createRoot(document.getElementById('root')).render(
   <React.StrictMode>
-    <RouterProvider router={router} />
+    <TranslationProvider>
+      <RouterProvider router={router} />
+    </TranslationProvider>
   </React.StrictMode>
 )

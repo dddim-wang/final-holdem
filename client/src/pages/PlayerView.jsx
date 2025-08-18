@@ -3,17 +3,24 @@ import { useParams, Link, useLocation } from 'react-router-dom'
 import { socket } from '../socket'
 import Card from '../components/Card'
 import HandRankings from '../components/HandRankings'
-import { api, setAuth } from '../api'
+import { api, setAuth, clearAuth } from '../api'
 import GifDisplay from '../components/GifDisplay'
+import MusicPlayer from '../components/MusicPlayer'
+import { useTranslation } from '../contexts/TranslationContext'
 
 export default function PlayerView() {
   const { gameId } = useParams()
   const location = useLocation()
   const [game, setGame] = useState(null)
+  const { t } = useTranslation()
   
-  // Use logged-in username if available, otherwise generate random name
-  const loggedInUsername = localStorage.getItem('username')
-  const [name, setName] = useState(() => loggedInUsername || `P-${Math.random().toString(36).slice(2, 6)}`)
+  // Get authentication state first
+  const [isAuthenticated, setIsAuthenticated] = useState(false)
+  const [authenticatedUsername, setAuthenticatedUsername] = useState(null)
+  
+  // Generate random name for unauthenticated users
+  const [name, setName] = useState(() => `P-${Math.random().toString(36).slice(2, 6)}`)
+  
   const [hole, setHole] = useState([])
   const [hidden, setHidden] = useState(false)
   const [flipped, setFlipped] = useState(false)
@@ -24,19 +31,29 @@ export default function PlayerView() {
   const [sending, setSending] = useState(false)
   const [showQuitConfirm, setShowQuitConfirm] = useState(false)
 
-  // Ensure API has auth header if user previously logged in
+  // Clear any existing authentication when component mounts to prevent cross-user issues
   useEffect(() => {
-    const t = localStorage.getItem('token')
-    if (t) setAuth(t)
+    clearAuth()
   }, [])
 
-  // Update player name when user logs in
+  // Check authentication status and set up API
   useEffect(() => {
-    const currentUsername = localStorage.getItem('username')
-    if (currentUsername && currentUsername !== name) {
-      setName(currentUsername)
+    const token = localStorage.getItem('token')
+    const storedUsername = localStorage.getItem('username')
+    
+    if (token && storedUsername) {
+      // Valid authentication found
+      setAuth(token)
+      setIsAuthenticated(true)
+      setAuthenticatedUsername(storedUsername)
+      setName(storedUsername) // Use authenticated username
+    } else {
+      // No valid authentication
+      setIsAuthenticated(false)
+      setAuthenticatedUsername(null)
+      clearAuth()
     }
-  }, [name])
+  }, [])
 
   // Join the game and ask for state
   useEffect(() => {
@@ -50,6 +67,18 @@ export default function PlayerView() {
       setGame(s)
       const me = s.players?.find((p) => p.name === name)
       setActed(Boolean(me?.acted))
+      
+      // Clear result when starting a new round
+      if (s.stage === 'preflop' && result) {
+        setResult(null)
+      }
+      
+      // Clear cards and reset state when game resets to lobby
+      if (s.stage === 'lobby') {
+        setHole([])
+        setResult(null)
+        setActed(false)
+      }
     }
     const onCards = (c) => setHole(c.cards)
          const onShowdown = (w) => {
@@ -110,6 +139,17 @@ export default function PlayerView() {
     setShowQuitConfirm(false)
   }
 
+  const handleLogout = () => {
+    localStorage.removeItem('token')
+    localStorage.removeItem('username')
+    clearAuth()
+    setIsAuthenticated(false)
+    setAuthenticatedUsername(null)
+    // Generate new random name for unauthenticated state
+    setName(`P-${Math.random().toString(36).slice(2, 6)}`)
+    window.location.reload()
+  }
+
   // Get current player info
   const currentPlayer = game?.players?.find((p) => p.name === name)
   const needsToCall = currentPlayer?.needsToCall
@@ -142,40 +182,33 @@ export default function PlayerView() {
       <div className="min-h-screen bg-overlay flex items-center justify-center">
         <div className="text-center">
           <div className="spinner mx-auto mb-4"></div>
-          <div className="text-2xl font-bold neon-text text-readable-dark">🎮 Joining Game... 🎮</div>
+          <div className="text-2xl font-bold neon-text text-readable-dark">🎮 {t('Joining Game...')} 🎮</div>
         </div>
       </div>
     )
 
-  const isAuthed = Boolean(localStorage.getItem('token'))
-  const username = localStorage.getItem('username') || 'Player'
-
-  const handleLogout = () => {
-    localStorage.removeItem('token')
-    localStorage.removeItem('username')
-    window.location.reload()
-  }
+  const username = authenticatedUsername || 'Player'
 
   return (
     <div className="min-h-screen bg-overlay text-white p-6 space-y-4">
       {/* Header with Login/Register only on player side */}
       <div className="flex items-center justify-between slide-in">
-                 <h1 className="text-2xl font-bold neon-text text-readable-dark">🎰 Game {game.gameId} 🎰</h1>
+                 <h1 className="text-2xl font-bold neon-text text-readable-dark">🎰 {t('Game')} {game.gameId} 🎰</h1>
         <div className="flex items-center gap-3">
-          {!isAuthed ? (
+          {!isAuthenticated ? (
             <>
               <Link to={`/login?returnTo=${encodeURIComponent(location.pathname)}`} className="flashy-button hover-lift">
-                🔐 Login
+                🔐 {t('Login')}
               </Link>
               <Link to={`/register?returnTo=${encodeURIComponent(location.pathname)}`} className="flashy-button hover-lift">
-                ✨ Register
+                ✨ {t('Register')}
               </Link>
             </>
           ) : (
             <>
-              <span className="text-white shimmer-text text-lg text-readable">👋 Hi, {username}</span>
+              <span className="text-white shimmer-text text-lg text-readable">👋 {t('Hi')}, {username}</span>
               <button onClick={handleLogout} className="flashy-button hover-lift">
-                🚪 Logout
+                🚪 {t('Logout')}
               </button>
             </>
           )}
@@ -186,20 +219,20 @@ export default function PlayerView() {
         <div className="space-y-3">
           <div className="flex items-center gap-2 text-readable">
             <span className="text-2xl">👤</span>
-            <span className="text-lg">Your name: <span className="font-bold neon-text">{name}</span></span>
+            <span className="text-lg">{t('Your name:')} <span className="font-bold neon-text">{name}</span></span>
           </div>
           <div className="flex items-center gap-2 text-readable">
             <span className="text-2xl">🎯</span>
-            <span className="text-lg">Stage: <span className="font-bold shimmer-text">{game.stage}</span></span>
+            <span className="text-lg">{t('Stage:')} <span className="font-bold shimmer-text">{game.stage}</span></span>
           </div>
           
           <div className="flex items-center gap-2 text-readable">
             <span className="text-2xl">💰</span>
-            <span className="text-lg">Current bet: <span className="font-bold text-green-400">{game.currentBet || 0}</span></span>
+            <span className="text-lg">{t('Current bet:')} <span className="font-bold text-green-400">{game.currentBet || 0}</span></span>
           </div>
                      <div className="flex items-center gap-2 text-readable">
              <span className="text-2xl">💪</span>
-             <span className="text-lg">Squats you must complete: <span className="font-bold text-yellow-400">
+             <span className="text-lg">{t('Squats you must complete:')} <span className="font-bold text-yellow-400">
                {game.players?.filter(p => !p.name.startsWith('Host-')).map(p => (
                  <div key={p.name} className="inline-block mr-2 bounce-element">
                    {p.name}: {p.pot || 0}
@@ -210,8 +243,8 @@ export default function PlayerView() {
         </div>
         {needsToCall && (
           <div className="mt-4 glow-button p-4 text-center">
-            <div className="font-bold text-xl text-readable">🎰 You must call or fold! 🎰</div>
-            <div className="text-lg text-readable">Call amount: <span className="font-bold text-yellow-300">{callAmount}</span></div>
+            <div className="font-bold text-xl text-readable">🎰 {t('You must call or fold!')} 🎰</div>
+            <div className="text-lg text-readable">{t('Call amount:')} <span className="font-bold text-yellow-300">{callAmount}</span></div>
           </div>
         )}
       </div>
@@ -220,30 +253,30 @@ export default function PlayerView() {
          <Card code={hole[0]} hidden={hidden} flipped={flipped} onToggle={() => setHidden(!hidden)} size="xlarge" />
          <Card code={hole[1]} hidden={hidden} flipped={flipped} onToggle={() => setHidden(!hidden)} size="xlarge" />
          <button onClick={() => setShowRanks(true)} className="ml-auto flashy-button hover-lift">
-           📊 Hand rankings
+           📊 {t('Hand rankings')}
          </button>
        </div>
 
        {/* Folded State Indicator */}
-       {currentPlayer && !currentPlayer.inHand && (
+       {currentPlayer && !currentPlayer.inHand && game.stage !== 'lobby' && (
          <div className="flashy-card glass-enhanced p-6 text-center error-shake">
            <div className="text-3xl mb-2">🔴</div>
-           <div className="text-2xl font-bold text-readable-dark neon-text mb-2">You Folded!</div>
+           <div className="text-2xl font-bold text-readable-dark neon-text mb-2">{t('You Folded!')}</div>
            <div className="text-lg text-readable">
-             You are no longer in this round. You must complete <span className="font-bold text-yellow-400">{currentPlayer.pot}</span> squats.
+             {t('You are no longer in this round. You must complete')} <span className="font-bold text-yellow-400">{currentPlayer.pot}</span> {t('squats.')}
            </div>
            <div className="mt-4 text-sm text-readable opacity-75">
-             Wait for the round to end to see the results.
+             {t('Wait for the round to end to see the results.')}
            </div>
          </div>
        )}
 
              {!result && (
          <div className="flashy-card glass-enhanced p-6 flex gap-4 flex-wrap">
-           {currentPlayer && !currentPlayer.inHand ? (
+           {currentPlayer && !currentPlayer.inHand && game.stage !== 'lobby' ? (
              <div className="w-full text-center">
                <div className="text-lg text-readable opacity-75">
-                 🔴 You folded and cannot take any more actions this round.
+                 🔴 {t('You folded and cannot take any more actions this round.')}
                </div>
              </div>
            ) : (
@@ -253,7 +286,7 @@ export default function PlayerView() {
                  disabled={acted || needsToCall} 
                  className={`flashy-button hover-lift ${needsToCall ? 'opacity-50' : ''}`}
                >
-                 ✅ Check
+                 ✅ {t('Check')}
                </button>
           {needsToCall && (
             <>
@@ -262,7 +295,7 @@ export default function PlayerView() {
                  disabled={acted} 
                  className="glow-button hover-lift"
                >
-                 💰 Call {callAmount} More Squats
+                 💰 {t('Call')} {callAmount} {t('More Squats')}
                </button>
               {!game?.raiseMade && (
                                  <button 
@@ -270,7 +303,7 @@ export default function PlayerView() {
                    disabled={acted} 
                    className="fire-button hover-lift"
                  >
-                   <span className="fire-text">🔥⬆️ Raise to 8 More Squats🔥</span>
+                   <span className="fire-text">🔥⬆️ {t('Raise to 8 More Squats')}🔥</span>
                  </button>
               )}
             </>
@@ -279,18 +312,18 @@ export default function PlayerView() {
             <>
                              {canBet4 && (
                  <button onClick={() => act('bet4')} disabled={acted} className="flashy-button hover-lift">
-                   💎 Bet 4 More Squats
+                   💎 {t('Bet 4 More Squats')}
                  </button>
                )}
                              {canBet8 && (
                  <button onClick={() => act('bet8')} disabled={acted} className="fire-button hover-lift">
-                   <span className="fire-text">🔥💎💎 Bet 8 More Squats🔥</span>
+                   <span className="fire-text">🔥💎💎 {t('Bet 8 More Squats')}🔥</span>
                  </button>
                )}
             </>
           )}
                                 <button onClick={handleQuit} disabled={acted} className="ml-auto flashy-button hover-lift">
-             🃏 I Quit
+             🃏 {t('I Quit')}
            </button>
              </>
            )}
@@ -299,30 +332,60 @@ export default function PlayerView() {
 
       {result && (
         <div className="flashy-card glass-enhanced p-6 text-center">
-          {result.winners.includes(name) ? (
-                         <div className="text-3xl font-bold success-glow bounce-element text-readable">
-               🎰🎊 Congratulations on winning! 🎊🎰
-             </div>
+          {result.board_win ? (
+            <div className="text-2xl font-bold success-glow text-readable">
+              🎰 {t('Board wins! All players split the pot!')} 🎰
+            </div>
+          ) : result.winners.includes(name) ? (
+            <div className="text-3xl font-bold success-glow bounce-element text-readable">
+              {result.early_winner ? (
+                <>🎰🎊 {t('You won!!')} 🎊🎰<br/>
+                <span className="text-xl text-yellow-300">{t('All other players folded!')}</span></>
+              ) : (
+                <>🎰🎊 {t('Congratulations on winning!')} 🎊🎰</>
+              )}
+            </div>
           ) : (
-                         <div className="text-2xl font-bold error-shake text-readable">
-               🎰 Hand over. You must do <span className="neon-text text-yellow-400">{result.lostRaises ?? 0}</span> squats! 🎰
-             </div>
+            <div className="text-2xl font-bold error-shake text-readable">
+              🎰 {t('Hand over. You must do')} <span className="neon-text text-yellow-400">{result.lostRaises ?? 0}</span> {t('squats!')} 🎰
+            </div>
           )}
-                     <div className="mt-4 text-lg shimmer-text text-readable">
-             🏆 Your hand: <span className="font-bold text-yellow-300">{result.myHandName || result.hand_name}</span>
-           </div>
+          
+          {result.early_winner && result.winners.includes(name) ? (
+            <div className="mt-4 text-lg shimmer-text text-readable">
+              🏆 {t('You won because you were the last player standing!')} 🏆
+            </div>
+          ) : !result.board_win && (
+            <div className="mt-4 text-lg shimmer-text text-readable">
+              🏆 {t('Your hand:')} <span className="font-bold text-yellow-300">{result.myHandName || result.hand_name}</span>
+            </div>
+          )}
+          
+          {result.board_win && (
+            <div className="mt-4 text-lg shimmer-text text-readable">
+              🃏 {t('The board had the best hand:')} <span className="font-bold text-blue-300">{result.hand_name}</span>
+              <br/>
+              <span className="text-yellow-300">{t('All active players split the pot equally!')}</span>
+            </div>
+          )}
+          
+          {result.winners.length > 1 && !result.board_win && (
+            <div className="mt-2 text-lg shimmer-text text-readable">
+              🎉 {t('Congratulations to all winners!')} 🎉
+            </div>
+          )}
         </div>
       )}
 
       {/* Comment box visible only when logged in */}
-      {isAuthed && (
+      {isAuthenticated && (
         <div className="flashy-card glass-enhanced p-6 space-y-4">
-          <div className="text-lg shimmer-text text-readable">💬 Leave a comment (scrolls on host screen):</div>
+          <div className="text-lg shimmer-text text-readable">💬 {t('Leave a comment (scrolls on host screen):')}</div>
           <form onSubmit={submitComment} className="flex gap-3">
             <input
               value={comment}
               onChange={(e) => setComment(e.target.value)}
-              placeholder="Type your message…"
+              placeholder={t('Type your message…')}
               className="flex-1 flashy-input"
             />
             <button
@@ -330,7 +393,7 @@ export default function PlayerView() {
               disabled={sending}
               className="flashy-button hover-lift"
             >
-              {sending ? '🔄 Sending…' : '📤 Send'}
+              {sending ? `🔄 ${t('Sending…')}` : `📤 ${t('Send')}`}
             </button>
           </form>
         </div>
@@ -342,22 +405,22 @@ export default function PlayerView() {
        {showQuitConfirm && (
          <div className="fixed inset-0 bg-black/80 flex items-center justify-center z-50">
            <div className="flashy-card glass-enhanced p-8 max-w-md text-center">
-             <h3 className="text-2xl font-bold mb-4 text-readable-dark neon-text">⚠️ Are you sure? ⚠️</h3>
+             <h3 className="text-2xl font-bold mb-4 text-readable-dark neon-text">⚠️ {t('Are you sure?')} ⚠️</h3>
              <p className="text-lg mb-6 text-readable">
-               If you quit now, you must complete <span className="font-bold text-yellow-400">{currentPlayer?.pot || 0}</span> squats!
+               {t('If you quit now, you must complete')} <span className="font-bold text-yellow-400">{currentPlayer?.pot || 0}</span> {t('squats!')}
              </p>
              <div className="flex gap-4 justify-center">
                <button 
                  onClick={cancelQuit} 
                  className="flashy-button hover-lift"
                >
-                 🚫 Cancel
+                 🚫 {t('Cancel')}
                </button>
                <button 
                  onClick={confirmQuit} 
                  className="flashy-button hover-lift error-shake"
                >
-                 💀 Yes, I Quit
+                 💀 {t('Yes, I Quit')}
                </button>
              </div>
            </div>
@@ -366,6 +429,11 @@ export default function PlayerView() {
 
        {/* GIF Display */}
        <GifDisplay isHost={false} />
+
+       {/* Music Player */}
+       <div className="flex justify-center">
+         <MusicPlayer />
+       </div>
      </div>
    )
  }

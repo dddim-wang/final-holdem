@@ -150,6 +150,49 @@ body {
   }
 }
 
+@keyframes fire-glow {
+  0%, 100% { 
+    background-position: 0% 50%;
+    box-shadow: 0 0 20px #dc2626, 0 0 40px #dc2626, 0 0 60px #dc2626;
+  }
+  50% { 
+    background-position: 100% 50%;
+    box-shadow: 0 0 30px #dc2626, 0 0 60px #dc2626, 0 0 80px #dc2626;
+  }
+}
+
+@keyframes card-entrance {
+  0% {
+    opacity: 0;
+    transform: translateY(100px) scale(0.5) rotateY(-90deg);
+  }
+  50% {
+    opacity: 0.8;
+    transform: translateY(-20px) scale(1.2) rotateY(-45deg);
+  }
+  100% {
+    opacity: 1;
+    transform: translateY(0) scale(1) rotateY(0deg);
+  }
+}
+
+.animate-card-entrance {
+  animation: simple-fade-in 1.2s cubic-bezier(0.175, 0.885, 0.32, 1.275) forwards !important;
+  animation-delay: var(--animation-delay, 0ms) !important;
+}
+
+/* Fallback simple animation */
+@keyframes simple-fade-in {
+  from {
+    opacity: 0;
+    transform: translateY(150px) scale(0.3) rotateX(-45deg);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1) rotateX(0deg);
+  }
+}
+
 /* Fiery button for raise to 8 */
 .fire-button {
   animation: fire 2s ease-in-out infinite;
@@ -412,4 +455,96 @@ body {
   padding-left: 100%;
   animation: scroll 18s linear infinite;
   color: #FFD700;
+}
+
+/* Handle long usernames gracefully */
+.username-long {
+  max-width: 200px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.username-very-long {
+  max-width: 150px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 0.9em;
+}
+
+/* Ensure player names don't break layouts */
+.player-name {
+  max-width: 180px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* Music Player Button Styles */
+.music-button {
+  background: linear-gradient(135deg, rgba(255, 215, 0, 0.2), rgba(220, 20, 60, 0.2));
+  border: 2px solid #FFD700;
+  box-shadow: 
+    0 4px 15px rgba(0, 0, 0, 0.3),
+    0 0 20px rgba(255, 215, 0, 0.2);
+  backdrop-filter: blur(10px);
+  transition: all 0.3s ease;
+}
+
+.music-button:hover {
+  background: linear-gradient(135deg, rgba(255, 215, 0, 0.3), rgba(220, 20, 60, 0.3));
+  border-color: #FFA500;
+  box-shadow: 
+    0 6px 20px rgba(0, 0, 0, 0.4),
+    0 0 30px rgba(255, 215, 0, 0.4);
+  transform: translateY(-2px);
+}
+
+.music-button:active {
+  transform: translateY(0) scale(0.98);
+}
+
+/* Fast Yellow Shining Music Button */
+.music-button-fast-shine {
+  background: linear-gradient(135deg, rgba(255, 215, 0, 0.3), rgba(255, 255, 0, 0.4), rgba(255, 215, 0, 0.3));
+  border: 3px solid #FFD700;
+  box-shadow: 
+    0 4px 15px rgba(0, 0, 0, 0.3),
+    0 0 30px rgba(255, 215, 0, 0.6),
+    0 0 60px rgba(255, 255, 0, 0.4);
+  backdrop-filter: blur(10px);
+  transition: all 0.3s ease;
+  animation: fast-yellow-shine 0.8s ease-in-out infinite;
+}
+
+.music-button-fast-shine:hover {
+  background: linear-gradient(135deg, rgba(255, 215, 0, 0.5), rgba(255, 255, 0, 0.6), rgba(255, 215, 0, 0.5));
+  border-color: #FFFF00;
+  box-shadow: 
+    0 6px 20px rgba(0, 0, 0, 0.4),
+    0 0 40px rgba(255, 215, 0, 0.8),
+    0 0 80px rgba(255, 255, 0, 0.6);
+  transform: translateY(-2px) scale(1.05);
+}
+
+.music-button-fast-shine:active {
+  transform: translateY(0) scale(0.98);
+}
+
+@keyframes fast-yellow-shine {
+  0%, 100% { 
+    box-shadow: 
+      0 4px 15px rgba(0, 0, 0, 0.3),
+      0 0 30px rgba(255, 215, 0, 0.6),
+      0 0 60px rgba(255, 255, 0, 0.4);
+    border-color: #FFD700;
+  }
+  50% { 
+    box-shadow: 
+      0 4px 15px rgba(0, 0, 0, 0.3),
+      0 0 50px rgba(255, 215, 0, 0.9),
+      0 0 100px rgba(255, 255, 0, 0.7);
+    border-color: #FFFF00;
+  }
 }
