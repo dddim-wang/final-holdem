@@ -338,7 +338,9 @@ def on_disconnect():
             # If host disconnected, clear host_sid
             if sid == g.host_sid:
                 g.host_sid = None
-            sio.emit("lobby_update", {"count": len(g.players), "max": g.max_players}, to=g.game_id)
+            # Count only non-host players for lobby updates
+            non_host_count = len([p for p in g.players.values() if not p.name.startswith("Host-")])
+            sio.emit("lobby_update", {"count": non_host_count, "max": g.max_players}, to=g.game_id)
             sio.emit("system", {"msg": f"{name} left."}, to=g.game_id)
             # Emit updated state to all players including host
             sio.emit("state", serialize_game(g), to=g.game_id)
@@ -359,11 +361,15 @@ def join_game(data):
     if game_id not in GAMES:
         return emit("error", {"error": "Game not found"})
     g = GAMES[game_id]
-    if len(g.players) >= g.max_players:
+    # Count only non-host players when checking if game is full
+    non_host_players = len([p for p in g.players.values() if not p.name.startswith("Host-")])
+    if non_host_players >= g.max_players:
         return emit("error", {"error": "Game is full"})
     join_room(game_id)
     g.players[request.sid] = Player(sid=request.sid, name=name)
-    sio.emit("lobby_update", {"count": len(g.players), "max": g.max_players}, to=game_id)
+    # Count only non-host players for lobby updates
+    non_host_count = len([p for p in g.players.values() if not p.name.startswith("Host-")])
+    sio.emit("lobby_update", {"count": non_host_count, "max": g.max_players}, to=g.game_id)
     sio.emit("system", {"msg": f"{name} joined."}, to=game_id)
     # Emit updated state to all players including host
     sio.emit("state", serialize_game(g), to=game_id)
@@ -917,7 +923,7 @@ def serialize_game(g: Game):
             }
             for p in g.players.values()
         ],
-        "count": len(g.players),
+        "count": len([p for p in g.players.values() if not p.name.startswith("Host-")]),
         "max": g.max_players,
     }
     print(f"Serialized game - Current bet: {g.current_bet}, Raise made: {g.raise_made}, Players: {[(p.name, p.pot, p.in_hand and p.pot < g.current_bet and not p.action_submitted) for p in g.players.values()]}")
