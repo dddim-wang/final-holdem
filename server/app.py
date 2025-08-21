@@ -20,7 +20,7 @@ app.config["SECRET_KEY"] = os.environ.get("SECRET_KEY", "dev-secret")
 app.config["JWT_SECRET_KEY"] = os.environ.get("JWT_SECRET_KEY", "dev-jwt")
 app.config["JWT_ACCESS_TOKEN_EXPIRES"] = timedelta(days=3)
 CORS(app, supports_credentials=True)
-sio = SocketIO(app, cors_allowed_origins="*", async_mode="threading")
+sio = SocketIO(app, cors_allowed_origins="*", async_mode="eventlet")
 jwt = JWTManager(app)
 
 DB_PATH = os.path.join(os.path.dirname(__file__), "app.db")
