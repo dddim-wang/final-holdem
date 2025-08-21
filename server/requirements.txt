@@ -5,3 +5,4 @@ eventlet==0.36.1
 Werkzeug==3.0.3
 flask-jwt-extended==4.6.0
 python-dotenv==1.0.1
+gunicorn
