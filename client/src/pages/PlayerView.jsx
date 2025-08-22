@@ -286,7 +286,7 @@ export default function PlayerView() {
                  disabled={acted || needsToCall} 
                  className={`flashy-button hover-lift ${needsToCall ? 'opacity-50' : ''}`}
                >
-                 ✅ {t('Check')}
+                 {acted ? `✅ ${t('Checked')}` : `✅ ${t('Check')}`}
                </button>
           {needsToCall && (
             <>

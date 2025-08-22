@@ -79,6 +79,7 @@ const translations = {
   'Wait for the round to end to see the results.': '等待回合结束查看结果。',
   'You folded and cannot take any more actions this round.': '你已弃牌，本轮无法再采取行动。',
   'Check': '过牌',
+  'Checked': '已过牌',
   'Call': '跟注',
   'More Squats': '更多深蹲',
   'Raise to 8 More Squats': '加注到8个更多深蹲',
