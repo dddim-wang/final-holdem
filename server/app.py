@@ -400,6 +400,12 @@ def reset_betting_round(g: Game):
     g.raise_made = False
 
 
+def reset_players_who_owe_call(g: Game, bettor: Player):
+    for other_p in g.players.values():
+        if other_p.sid != bettor.sid and other_p.in_hand and other_p.round_bet < g.current_bet:
+            other_p.action_submitted = False
+
+
 @sio.on("player_action")
 def player_action(data):
     game_id = (data or {}).get("gameId")
@@ -443,6 +449,7 @@ def player_action(data):
         p.action_submitted = True
         g.someone_raised = True
         g.current_bet = SMALL_BET
+        reset_players_who_owe_call(g, p)
         print(f"Player {p.name} bet {SMALL_BET}. Current bet: {g.current_bet}, stack: {p.chips}")
     elif action == "bet8":
         if g.raise_made:
@@ -457,9 +464,7 @@ def player_action(data):
         g.someone_raised = True
         g.raise_made = True
         g.current_bet = BIG_BET
-        for other_p in g.players.values():
-            if other_p.sid != p.sid and other_p.in_hand:
-                other_p.action_submitted = False
+        reset_players_who_owe_call(g, p)
         print(f"Player {p.name} raised to {BIG_BET}. Current bet: {g.current_bet}, stack: {p.chips}")
     else:
         return emit("error", {"error": "Invalid action"})
