@@ -1,0 +1,14 @@
+﻿.git
+.agents
+.codex
+.env
+.env.*
+*.log
+
+server/.venv
+server/__pycache__
+server/*.pyc
+server/app.db
+
+client/node_modules
+client/dist
