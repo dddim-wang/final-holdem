@@ -94,7 +94,7 @@ export default function HostView(){
 
           <div className="flex gap-4 flex-wrap">
                          <button onClick={start} className="flashy-button hover-lift">🎰 Start Round</button>
-            <button onClick={dealNext} disabled={!canDeal} className={`flashy-button hover-lift ${!canDeal ? 'opacity-50' : ''}`}>🃏 Deal next card</button>
+            <button onClick={dealNext} disabled={!canDeal} className={`flashy-button hover-lift ${!canDeal ? 'opacity-50' : ''}`}>🃏 Deal next street</button>
             <button 
               onClick={reset} 
               className="flashy-button hover-lift" 

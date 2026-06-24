@@ -40,7 +40,7 @@ export default function App() {
               </p>
               <p className="flex items-center justify-center gap-2 text-readable">
                 <span className="text-2xl">🃏</span>
-                <span>First flop shows 2 cards for an extra betting round</span>
+                <span>Standard Hold'em flow: flop, turn, river</span>
               </p>
               <p className="flex items-center justify-center gap-2 text-readable">
                 <span className="text-2xl">💪</span>

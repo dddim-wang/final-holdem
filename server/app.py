@@ -81,7 +81,7 @@ class Game:
     players: Dict[str, Player] = field(default_factory=dict)  # sid -> Player
     deck: List[str] = field(default_factory=list)
     board: List[str] = field(default_factory=list)
-    stage: str = "lobby"  # lobby, preflop, flop2, flop3, turn, river, showdown
+    stage: str = "lobby"  # lobby, preflop, flop, turn, river, showdown
     pot: int = 0
     round_actions: Dict[str, str] = field(default_factory=dict)  # sid -> action
     someone_raised: bool = False
@@ -459,15 +459,11 @@ def host_deal_next(data):
 
     # Advance stage & reveal board
     if g.stage == "preflop":
-        print("Preflop stage dealing next cards...")
-        # reveal 2 (first flop)
-        g.board.append(g.deck.pop())
-        g.board.append(g.deck.pop())
-        g.stage = "flop2"
-    elif g.stage == "flop2":
-        g.board.append(g.deck.pop())  # third flop card
-        g.stage = "flop3"
-    elif g.stage == "flop3":
+        print("Preflop stage dealing flop...")
+        # Standard Texas Hold'em reveals all three flop cards at once.
+        g.board.extend([g.deck.pop(), g.deck.pop(), g.deck.pop()])
+        g.stage = "flop"
+    elif g.stage == "flop":
         g.board.append(g.deck.pop())  # turn
         g.stage = "turn"
     elif g.stage == "turn":
