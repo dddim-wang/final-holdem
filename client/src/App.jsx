@@ -23,8 +23,8 @@ export default function App() {
     <div className="min-h-screen flex items-center justify-center bg-overlay text-white p-6">
       <div className="max-w-2xl w-full space-y-8">
         <div className="text-center fade-in-up">
-          <h1 className="text-6xl font-bold neon-text text-readable-dark mb-4">🎰 Hold'em Squat 🎰</h1>
-          <div className="text-2xl shimmer-text text-readable mb-8">The Ultimate Poker Fitness Game!</div>
+          <h1 className="text-6xl font-bold neon-text text-readable-dark mb-4">🎰 Final Hold'em 🎰</h1>
+          <div className="text-2xl shimmer-text text-readable mb-8">The Ultimate Poker Chip Game!</div>
         </div>
         
         <div className="flashy-card glass-enhanced p-8 text-center fade-in-up">
@@ -44,7 +44,7 @@ export default function App() {
               </p>
               <p className="flex items-center justify-center gap-2 text-readable">
                 <span className="text-2xl">💪</span>
-                <span>Losers do squats equal to their total bets!</span>
+                <span>Win the pot with the best hand and manage your chip stack!</span>
               </p>
             </div>
             

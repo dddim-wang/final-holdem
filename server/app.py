@@ -63,6 +63,9 @@ with db() as conn:
 # --- Card & hand evaluation ---
 RANKS = "23456789TJQKA"
 SUITS = "SHDC"  # Spades, Hearts, Diamonds, Clubs
+STARTING_CHIPS = 100
+SMALL_BET = 4
+BIG_BET = 8
 
 @dataclass
 class Player:
@@ -70,9 +73,11 @@ class Player:
     name: str
     in_hand: bool = True
     cards: List[str] = field(default_factory=list)
-    raises: int = 0  # cumulative count of bets (4 or 8) made
+    raises: int = 0  # number of betting actions this hand
     action_submitted: bool = False
-    pot: int = 0
+    chips: int = STARTING_CHIPS
+    round_bet: int = 0
+    pot: int = 0  # total chips committed this hand
 
 @dataclass
 class Game:
@@ -335,7 +340,7 @@ def join_game(data):
     if len(g.players) >= g.max_players:
         return emit("error", {"error": "Game is full"})
     join_room(game_id)
-    g.players[request.sid] = Player(sid=request.sid, name=name)
+    g.players[request.sid] = Player(sid=request.sid, name=name, in_hand=(g.stage == "lobby"))
     sio.emit("lobby_update", {"count": len(g.players), "max": g.max_players}, to=game_id)
     sio.emit("system", {"msg": f"{name} joined."}, to=game_id)
     # Emit updated state to all players including host
@@ -360,9 +365,10 @@ def host_start(data):
     g.current_bet = 0
     g.raise_made = False
     for p in g.players.values():
-        p.in_hand = True
+        p.in_hand = (not p.name.startswith("Host-")) and p.chips > 0
         p.action_submitted = False
         p.raises = 0
+        p.round_bet = 0
         p.pot = 0
         p.cards = []
     g.deal_to_all()
@@ -371,10 +377,33 @@ def host_start(data):
         sio.emit("your_cards", {"cards": p.cards}, to=p.sid)
     sio.emit("state", serialize_game(g), to=game_id)
 
+def commit_chips(g: Game, p: Player, target_round_bet: int):
+    amount = target_round_bet - p.round_bet
+    if amount <= 0:
+        return 0, None
+    if p.chips < amount:
+        return 0, f"Not enough chips. You need {amount}, but only have {p.chips}."
+    p.chips -= amount
+    p.round_bet += amount
+    p.pot += amount
+    g.pot += amount
+    return amount, None
+
+
+def reset_betting_round(g: Game):
+    for p in g.players.values():
+        p.round_bet = 0
+        if p.in_hand:
+            p.action_submitted = False
+    g.someone_raised = False
+    g.current_bet = 0
+    g.raise_made = False
+
+
 @sio.on("player_action")
 def player_action(data):
     game_id = (data or {}).get("gameId")
-    action = (data or {}).get("action")  # check, bet4, bet8, call, fold, raise
+    action = (data or {}).get("action")  # check, bet4, bet8, call, fold
     if game_id not in GAMES:
         return emit("error", {"error": "Game not found"})
     g = GAMES[game_id]
@@ -384,10 +413,9 @@ def player_action(data):
     if not p.in_hand:
         return
     if p.action_submitted:
-        return  # one action per round
+        return
 
-    # Check if player needs to call (they're below current bet)
-    needs_to_call = p.pot < g.current_bet
+    needs_to_call = p.round_bet < g.current_bet
 
     if action == "fold":
         p.in_hand = False
@@ -399,40 +427,40 @@ def player_action(data):
     elif action == "call":
         if not needs_to_call:
             return emit("error", {"error": "No need to call - you can check"})
-        call_amount = g.current_bet - p.pot
-        p.pot += call_amount
-        g.pot += call_amount
+        _, error = commit_chips(g, p, g.current_bet)
+        if error:
+            return emit("error", {"error": error})
         p.action_submitted = True
     elif action == "bet4":
-        # If current bet is 8, bet4 is not allowed (must call 8 or raise to 12)
-        if g.current_bet == 8:
-            return emit("error", {"error": "Cannot bet 4 when current bet is 8. Must call 8 or raise to 12"})
-        # If someone already raised in this round, can't bet 4 anymore
+        if g.current_bet > 0:
+            return emit("error", {"error": "There is already a bet. Call, raise to 8, or fold."})
         if g.raise_made:
             return emit("error", {"error": "Someone already raised in this round. You can only call or fold."})
-        p.pot += 4
-        g.pot += 4
+        _, error = commit_chips(g, p, SMALL_BET)
+        if error:
+            return emit("error", {"error": error})
         p.raises += 1
         p.action_submitted = True
         g.someone_raised = True
-        g.current_bet = max(g.current_bet, p.pot)
-        print(f"Player {p.name} bet 4. Current bet now: {g.current_bet}, Player pot: {p.pot}")
+        g.current_bet = SMALL_BET
+        print(f"Player {p.name} bet {SMALL_BET}. Current bet: {g.current_bet}, stack: {p.chips}")
     elif action == "bet8":
-        # If someone already raised in this round, can't raise again
         if g.raise_made:
             return emit("error", {"error": "Someone already raised in this round. You can only call or fold."})
-        p.pot += 8
-        g.pot += 8
+        if g.current_bet >= BIG_BET:
+            return emit("error", {"error": "Current bet is already 8. Call or fold."})
+        _, error = commit_chips(g, p, BIG_BET)
+        if error:
+            return emit("error", {"error": error})
         p.raises += 1
         p.action_submitted = True
         g.someone_raised = True
-        g.raise_made = True  # Mark that a raise has been made
-        g.current_bet = max(g.current_bet, p.pot)
-        # Reset action_submitted for all other players so they can act again
+        g.raise_made = True
+        g.current_bet = BIG_BET
         for other_p in g.players.values():
-            if other_p.sid != p.sid:
+            if other_p.sid != p.sid and other_p.in_hand:
                 other_p.action_submitted = False
-        print(f"Player {p.name} bet 8. Current bet now: {g.current_bet}, Player pot: {p.pot}")
+        print(f"Player {p.name} raised to {BIG_BET}. Current bet: {g.current_bet}, stack: {p.chips}")
     else:
         return emit("error", {"error": "Invalid action"})
 
@@ -480,13 +508,8 @@ def host_deal_next(data):
         sio.emit("state", serialize_game(g), to=g.game_id)
         return
 
-    # Reset per-round flags for next betting round
-    for p in g.players.values():
-        if p.in_hand:
-            p.action_submitted = False
-    g.someone_raised = False
-    g.current_bet = 0
-    g.raise_made = False
+    # Reset per-round flags and street bets for next betting round.
+    reset_betting_round(g)
 
     sio.emit("state", serialize_game(g), to=g.game_id)
 
@@ -513,9 +536,10 @@ def host_reset_round(data):
     g.raise_made = False
     g.reset_deck()
     for p in g.players.values():
-        p.in_hand = True
+        p.in_hand = (not p.name.startswith("Host-")) and p.chips > 0
         p.action_submitted = False
         p.raises = 0
+        p.round_bet = 0
         p.pot = 0
         p.cards = []
     g.deal_to_all()
@@ -537,12 +561,23 @@ def compute_winners(g: Game):
         print(f"DEBUG: Player {p.name} has cards {p.cards}, board is {g.board}, best hand: {name}, score: {score}")
     scored.sort(reverse=True, key=lambda t: t[0])
     top = scored[0][0]
-    winners = [s[1].name for s in scored if s[0] == top]
-    print(f"DEBUG: Top score is {top}, winners are {winners}")
+    winning_players = [s[1] for s in scored if s[0] == top]
+    winners = [p.name for p in winning_players]
+    pot_before_payout = g.pot
+    payouts = {}
+    if winning_players and pot_before_payout:
+        share = pot_before_payout // len(winning_players)
+        remainder = pot_before_payout % len(winning_players)
+        for index, winner in enumerate(winning_players):
+            payout = share + (1 if index < remainder else 0)
+            winner.chips += payout
+            payouts[winner.name] = payout
+    print(f"DEBUG: Top score is {top}, winners are {winners}, payouts are {payouts}")
     print(f"DEBUG: All player names in game: {[p.name for p in g.players.values()]}")
     return {
         "winners": winners,
-        "pot": g.pot,
+        "payouts": payouts,
+        "pot": pot_before_payout,
         "board": g.board,
         "hand_name": HAND_NAME[top[0]],  # This is the winning hand name
         "show": [
@@ -561,19 +596,23 @@ def serialize_game(g: Game):
         "raiseMade": g.raise_made,
         "players": [
             {
-                "name": p.name, 
-                "inHand": p.in_hand, 
-                "raises": p.raises, 
-                "acted": p.action_submitted, 
+                "name": p.name,
+                "inHand": p.in_hand,
+                "raises": p.raises,
+                "acted": p.action_submitted,
+                "chips": p.chips,
+                "roundBet": p.round_bet,
+                "totalBet": p.pot,
                 "pot": p.pot,
-                "needsToCall": p.in_hand and p.pot < g.current_bet and not p.action_submitted
+                "callAmount": max(g.current_bet - p.round_bet, 0),
+                "needsToCall": p.in_hand and p.round_bet < g.current_bet and not p.action_submitted
             }
             for p in g.players.values()
         ],
         "count": len(g.players),
         "max": g.max_players,
     }
-    print(f"Serialized game - Current bet: {g.current_bet}, Raise made: {g.raise_made}, Players: {[(p.name, p.pot, p.in_hand and p.pot < g.current_bet and not p.action_submitted) for p in g.players.values()]}")
+    print(f"Serialized game - Pot: {g.pot}, Current bet: {g.current_bet}, Players: {[(p.name, p.chips, p.round_bet, p.pot) for p in g.players.values()]}")
     return result
 
 if __name__ == "__main__":

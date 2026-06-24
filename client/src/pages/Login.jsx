@@ -26,7 +26,7 @@ export default function Login(){
       <div className="flashy-card glass-enhanced p-8 w-96 space-y-6 fade-in-up">
         <div className="text-center">
           <h1 className="text-3xl font-bold neon-text text-readable-dark mb-2">🔐 Login</h1>
-          <p className="shimmer-text text-readable">Welcome back to Hold'em Squat!</p>
+          <p className="shimmer-text text-readable">Welcome back to Final Hold'em!</p>
         </div>
         <form onSubmit={submit} className="space-y-4">
           <div>

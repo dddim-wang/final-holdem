@@ -63,16 +63,8 @@ export default function PlayerView() {
        setResult(w)
        const amWinner = w.winners.includes(name)
        console.log('DEBUG: Am I a winner?', amWinner)
-       if (!amWinner) {
-         const me = game?.players?.find((p) => p.name === name)
-         if (me) {
-           console.log('DEBUG: Setting lostRaises to:', me.pot)
-           setResult((prev) => ({ ...prev, lostRaises: me.pot }))
-         }
-       } else {
-         // Clear any lostRaises for winners
-         console.log('DEBUG: Clearing lostRaises for winner')
-         setResult((prev) => ({ ...prev, lostRaises: undefined }))
+       if (amWinner) {
+         console.log('DEBUG: Winner payout:', w.payouts?.[name] || 0)
        }
        // Find this player's hand name from the show data
        const myShowData = w.show?.find(s => s.name === name)
@@ -113,13 +105,13 @@ export default function PlayerView() {
   // Get current player info
   const currentPlayer = game?.players?.find((p) => p.name === name)
   const needsToCall = currentPlayer?.needsToCall
-  const callAmount = needsToCall ? (game?.currentBet || 0) - (currentPlayer?.pot || 0) : 0
+  const callAmount = currentPlayer?.callAmount || 0
   
   // Determine if bet4 is allowed (not allowed if current bet is 8 or if someone already raised)
-  const canBet4 = !needsToCall && (game?.currentBet || 0) < 8 && !game?.raiseMade
+  const canBet4 = !needsToCall && (game?.currentBet || 0) < 4 && !game?.raiseMade && (currentPlayer?.chips || 0) >= 4
   
   // Determine if bet8 is allowed (not allowed if someone already raised)
-  const canBet8 = !needsToCall && !game?.raiseMade
+  const canBet8 = !game?.raiseMade && (game?.currentBet || 0) < 8 && (currentPlayer?.chips || 0) >= (8 - (currentPlayer?.roundBet || 0))
 
   const submitComment = async (e) => {
     e.preventDefault()
@@ -195,14 +187,14 @@ export default function PlayerView() {
           
           <div className="flex items-center gap-2 text-readable">
             <span className="text-2xl">💰</span>
-            <span className="text-lg">Current bet: <span className="font-bold text-green-400">{game.currentBet || 0}</span></span>
+            <span className="text-lg">Current bet: <span className="font-bold text-green-400">{game.currentBet || 0}</span> chips · Pot: <span className="font-bold text-yellow-400">{game.pot || 0}</span></span>
           </div>
                      <div className="flex items-center gap-2 text-readable">
              <span className="text-2xl">💪</span>
-             <span className="text-lg">Squats you must complete: <span className="font-bold text-yellow-400">
+             <span className="text-lg">Chip stacks: <span className="font-bold text-yellow-400">
                {game.players?.filter(p => !p.name.startsWith('Host-')).map(p => (
                  <div key={p.name} className="inline-block mr-2 bounce-element">
-                   {p.name}: {p.pot || 0}
+                   {p.name}: {p.chips ?? 0} chips
                  </div>
                ))}
              </span></span>
@@ -230,7 +222,7 @@ export default function PlayerView() {
            <div className="text-3xl mb-2">🔴</div>
            <div className="text-2xl font-bold text-readable-dark neon-text mb-2">You Folded!</div>
            <div className="text-lg text-readable">
-             You are no longer in this round. You must complete <span className="font-bold text-yellow-400">{currentPlayer.pot}</span> squats.
+             You are no longer in this hand. Your committed chips stay in the pot.
            </div>
            <div className="mt-4 text-sm text-readable opacity-75">
              Wait for the round to end to see the results.
@@ -262,7 +254,7 @@ export default function PlayerView() {
                  disabled={acted} 
                  className="glow-button hover-lift"
                >
-                 💰 Call {callAmount} More Squats
+                 💰 Call {callAmount} Chips
                </button>
               {!game?.raiseMade && (
                                  <button 
@@ -270,7 +262,7 @@ export default function PlayerView() {
                    disabled={acted} 
                    className="fire-button hover-lift"
                  >
-                   <span className="fire-text">🔥⬆️ Raise to 8 More Squats🔥</span>
+                   <span className="fire-text">🔥⬆️ Raise to 8 Chips🔥</span>
                  </button>
               )}
             </>
@@ -279,12 +271,12 @@ export default function PlayerView() {
             <>
                              {canBet4 && (
                  <button onClick={() => act('bet4')} disabled={acted} className="flashy-button hover-lift">
-                   💎 Bet 4 More Squats
+                   💎 Bet 4 Chips
                  </button>
                )}
                              {canBet8 && (
                  <button onClick={() => act('bet8')} disabled={acted} className="fire-button hover-lift">
-                   <span className="fire-text">🔥💎💎 Bet 8 More Squats🔥</span>
+                   <span className="fire-text">🔥💎💎 Bet 8 Chips🔥</span>
                  </button>
                )}
             </>
@@ -301,11 +293,11 @@ export default function PlayerView() {
         <div className="flashy-card glass-enhanced p-6 text-center">
           {result.winners.includes(name) ? (
                          <div className="text-3xl font-bold success-glow bounce-element text-readable">
-               🎰🎊 Congratulations on winning! 🎊🎰
+               🎰🎊 You won <span className="neon-text text-yellow-400">{result.payouts?.[name] ?? result.pot ?? 0}</span> chips! 🎊🎰
              </div>
           ) : (
                          <div className="text-2xl font-bold error-shake text-readable">
-               🎰 Hand over. You must do <span className="neon-text text-yellow-400">{result.lostRaises ?? 0}</span> squats! 🎰
+               🎰 Hand over. Pot won: <span className="neon-text text-yellow-400">{result.pot ?? 0}</span> chips! 🎰
              </div>
           )}
                      <div className="mt-4 text-lg shimmer-text text-readable">
@@ -344,7 +336,7 @@ export default function PlayerView() {
            <div className="flashy-card glass-enhanced p-8 max-w-md text-center">
              <h3 className="text-2xl font-bold mb-4 text-readable-dark neon-text">⚠️ Are you sure? ⚠️</h3>
              <p className="text-lg mb-6 text-readable">
-               If you quit now, you must complete <span className="font-bold text-yellow-400">{currentPlayer?.pot || 0}</span> squats!
+               If you quit now, your committed chips stay in the pot.
              </p>
              <div className="flex gap-4 justify-center">
                <button 

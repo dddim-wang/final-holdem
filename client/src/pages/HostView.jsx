@@ -125,7 +125,7 @@ export default function HostView(){
                 <li key={i} className="flex justify-between items-center p-3 bg-black/20 rounded-lg hover-lift text-readable">
                   <span className="font-bold neon-text">{p.name}</span>
                   <span className="text-slate-200">
-                    {p.inHand? '🟢 in' : '🔴 folded'} · 💰 {p.pot} · {p.acted? '✅ acted':'⏳ waiting'}
+                    {p.inHand? '🟢 in' : '🔴 folded'} · Stack 💰 {p.chips ?? 0} · Pot {p.totalBet ?? p.pot ?? 0} · {p.acted? '✅ acted':'⏳ waiting'}
                     {p.needsToCall && <span className="text-orange-400 font-bold"> ⚠️ MUST CALL</span>}
                   </span>
                 </li>
