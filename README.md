@@ -1,4 +1,4 @@
-﻿# Hold'em Squat
+# Hold'em Squat
 
 Texas Hold'em party game built with React, Flask, and Socket.IO.
 
